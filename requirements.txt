@@ -1,3 +1,9 @@
-streamlit 
-fastapi 
+streamlit
+fastapi
 plotly-express
+uvicorn
+pydantic
+joblib
+scikit-learn
+numpy
+pandas
