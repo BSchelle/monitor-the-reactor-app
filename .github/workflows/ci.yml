@@ -1,0 +1,22 @@
+name: CI/CD Monitor Reactor
+on: [push, pull_request]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v3
+    - uses: actions/setup-python@v4
+      with: python-version: '3.12'
+    - run: pip install -r requirements.txt
+    - run: pytest tests/ --cov=src/ --cov-report=html
+
+  deploy:
+    needs: test
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    steps:
+    - uses: google-github-actions/auth@v1
+      with:
+        project_id: monitor-the-reactor
+    - run: gcloud run deploy monitor-reactor-api --image=... # Auto-deploy
