@@ -59,7 +59,7 @@ st.markdown("""
 # --- MENU ---
 st.sidebar.title("Navigation")
 st.sidebar.page_link("app.py", label="Accueil", icon="🏠")
-st.sidebar.page_link("pages/page_1.py", label="Secours", icon="1️⃣")
+st.sidebar.page_link("pages/page_1.py", label="Test API", icon="1️⃣")
 
 # --- INTERFACE PRINCIPALE ---
 st.title("🏭 Monitor the Reactor :")
