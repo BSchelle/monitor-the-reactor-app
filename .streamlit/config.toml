@@ -1,0 +1,8 @@
+[client]
+showSidebarNavigation = false
+
+[theme]
+primaryColor = "#28a745"  #  Vert à la place du rouge par défaut
+backgroundColor = "#0E1117"
+secondaryBackgroundColor = "#262730"
+textColor = "#FAFAFA"
