@@ -41,7 +41,7 @@ st.markdown("""
 
 # --- 4. LAYOUT ---
 st.title("🏭 Monitor the Reactor")
-st.markdown(f"Status API : `{API_URL}`")
+# st.markdown(f"Status API : `{API_URL}`")
 
 col_left, col_right = st.columns([1, 4])
 
@@ -65,13 +65,13 @@ with col_left:
 # === ZONE DROITE (VISUALISATION) ===
 with col_right:
     # Fenêtre 1 : Vue Globale
-    st.markdown("##### 📈 Vue d'ensemble (Pression)")
+    st.markdown("##### 📈 Prédiction des pannes")
     chart_main_spot = st.empty()
 
     st.divider()
 
     # --- FENÊTRE 2 : C'est ici que les graphes sont préparés ---
-    st.markdown("##### 📊 Capteurs (Données Réelles API)")
+    st.markdown("##### 📊 Capteurs du réacteur")
     feat_c1, feat_c2, feat_c3 = st.columns(3)
 
     # On crée 3 emplacements vides qui seront remplis par la boucle plus bas
@@ -93,7 +93,6 @@ with col_right:
 # ... dans app.py, juste avant requests.get
 #full_url = f"{API_URL}/get-process-data"
 #print(f"🧐 TENTATIVE DE CONNEXION SUR : {full_url}")  # Regardez votre terminal !
-
 #response = requests.get(full_url)
 
 
@@ -122,6 +121,7 @@ if start_clicked:
     history_pression = []
     history_temp = []
     history_debit = []
+    history_pred = []
     history_sample = []
 
     # C. BOUCLE D'ANIMATION
@@ -132,30 +132,32 @@ if start_clicked:
         val_press = row['xmeas_7']
         val_temp = row['xmeas_9']
         val_debit = row['xmeas_10']
+        val_pred = row['faults_pred']
         val_sample = row.get('sample', index)
 
         # Ajout aux historiques pour le tracé
         history_pression.append(val_press)
         history_temp.append(val_temp)
         history_debit.append(val_debit)
+        history_pred.append(val_pred)
         history_sample.append(val_sample)
 
         # Logique simple de seuil (Simulation d'alerte)
-        current_fault = "Normal"
-        if val_press > 2800: current_fault = "Surpression"
-        elif val_press < 2650: current_fault = "Sous-pression"
+        #current_fault = "Normal"
+        #if val_press > 2800: current_fault = "Surpression"
+        #elif val_press < 2650: current_fault = "Sous-pression"
 
-        color_status = "#FAFAFA" if current_fault == "Normal" else "#FF4B4B"
+        #color_status = "#FAFAFA" if current_fault == "Normal" else "#FF4B4B"
 
         # Mise à jour Info Box
-        prediction_box.markdown(f"""
-            <div class="result-box">
-                <div class="result-title">Échantillon</div>
-                <div class="result-value">{val_sample}</div>
-                <div class="result-title">État</div>
-                <div class="result-value" style="color: {color_status};">{current_fault}</div>
-            </div>
-        """, unsafe_allow_html=True)
+        #prediction_box.markdown(f"""
+        #    <div class="result-box">
+        #        <div class="result-title">Échantillon</div>
+        #        <div class="result-value">{val_sample}</div>
+        #        <div class="result-title">État</div>
+        #        <div class="result-value" style="color: {color_status};">{current_fault}</div>
+        #    </div>
+        #""", unsafe_allow_html=True)
 
         # --- MISE A JOUR FENÊTRE 2 (LES 3 GRAPHES) ---
 
@@ -174,17 +176,17 @@ if start_clicked:
         fig3.update_layout(height=200, margin=dict(t=30,b=10,l=10,r=10), title="Débit (xmeas_10)", template="plotly_dark")
         chart_feat3.plotly_chart(fig3, use_container_width=True, key=f"f3_{index}")
 
-        # Graphe Vue Globale
-        fig_main = px.line(x=history_sample, y=history_pression, title="Vue Globale Pression")
+        # Graphe Vue Prédiction
+        fig_main = px.line(x=history_sample, y=history_pred, title="Vue Globale")
         fig_main.update_layout(height=250, margin=dict(t=30,b=20,l=20,r=20), paper_bgcolor="rgba(0,0,0,0)")
         chart_main_spot.plotly_chart(fig_main, use_container_width=True, key=f"main_{index}")
 
         # Vanne
-        valve_color = "red" if current_fault != "Normal" else "green"
-        valve_status_spot.markdown(f"""
-            <div style="text-align: center; margin-top: 20px;">
-                <div style="width: 50px; height: 50px; background-color: {valve_color}; border-radius: 50%; border: 2px solid white; margin: 0 auto; box-shadow: 0 0 15px {valve_color};"></div>
-            </div>
-        """, unsafe_allow_html=True)
+        #valve_color = "red" if current_fault != "Normal" else "green"
+        #valve_status_spot.markdown(f"""
+        #    <div style="text-align: center; margin-top: 20px;">
+        #        <div style="width: 50px; height: 50px; background-color: {valve_color}; border-radius: 50%; border: 2px solid white; margin: 0 auto; box-shadow: 0 0 15px {valve_color};"></div>
+        #    </div>
+        #""", unsafe_allow_html=True)
 
         time.sleep(0.05)
