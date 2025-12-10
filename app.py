@@ -20,8 +20,12 @@ def get_api_url():
 
 API_URL = get_api_url()
 
-# --- 3. CSS (NETTOYÉ) ---
-# On garde uniquement le style pour la boîte de résultat, plus de hack pour les boutons.
+# --- 3. PARAMÈTRE DE TEMPS ---
+# Combien de minutes s'écoulent entre deux lignes du CSV ?
+# Pour le Tennessee Eastman, c'est souvent 3 minutes.
+TIME_STEP_MINUTES = 3
+
+# --- 4. CSS (NETTOYÉ) ---
 st.markdown("""
     <style>
     .main { background-color: #0E1117; }
@@ -40,7 +44,7 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-# --- 4. MISE EN PAGE ---
+# --- 5. MISE EN PAGE ---
 st.title("🏭 Monitor the Reactor")
 
 col_left, col_right = st.columns([1, 4])
@@ -56,7 +60,7 @@ with col_left:
     if 'simulation_running' not in st.session_state:
         st.session_state.simulation_running = False
 
-    # Menu déroulant (désactivé pendant la simulation)
+    # Menu déroulant
     selected_scenario_name = st.selectbox(
         "Sélectionnez le scénario",
         list(scenario_options.keys()),
@@ -68,12 +72,10 @@ with col_left:
     col_btn1, col_btn2 = st.columns(2)
 
     with col_btn1:
-        # Bouton DÉMARRER (Vert par défaut selon votre thème)
         if st.button("▶️ DÉMARRER", type="primary", use_container_width=True):
             st.session_state.simulation_running = True
 
     with col_btn2:
-        # Bouton ANNULER (Vert aussi, même taille, simple et stable)
         if st.button("⏹️ ANNULER", type="primary", use_container_width=True):
             st.session_state.simulation_running = False
 
@@ -104,7 +106,7 @@ with col_right:
 
 
 # ==========================
-# 5. LOGIQUE D'EXÉCUTION
+# 6. LOGIQUE D'EXÉCUTION
 # ==========================
 
 if st.session_state.simulation_running:
@@ -130,35 +132,33 @@ if st.session_state.simulation_running:
         st.session_state.simulation_running = False
         st.stop()
 
-    # B. FILTRAGE DES DONNÉES (Le cœur de votre demande)
+    # B. FILTRAGE DES DONNÉES
     if 'faultNumber' in df_full.columns:
-        # Conversion en int pour être sûr de la correspondance
         df_full['faultNumber'] = df_full['faultNumber'].astype(int)
-        # On ne garde que les ~500 lignes de la panne choisie
         simulation_data = df_full[df_full['faultNumber'] == selected_fault_code].reset_index(drop=True)
     else:
         st.warning("Colonne 'faultNumber' introuvable. Affichage brut.")
         simulation_data = df_full
 
-    # Gestion erreur Scénario vide
     if simulation_data.empty:
-        st.error(f"Aucune donnée trouvée pour la {selected_scenario_name} (Code {selected_fault_code}).")
+        st.error(f"Aucune donnée trouvée pour le scénario {selected_scenario_name}.")
         st.session_state.simulation_running = False
         st.stop()
 
     st.toast(f"Démarrage : {len(simulation_data)} points chargés", icon="🚀")
 
-    # C. INITIALISATION DES LISTES POUR L'ANIMATION
+    # C. INITIALISATION DES LISTES
     history_pression = []
     history_temp = []
     history_debit = []
     history_pred = []
-    history_sample = []
+
+    # On remplace history_sample par history_time
+    history_time = []
 
     # D. BOUCLE D'ANIMATION
     for index, row in simulation_data.iterrows():
 
-        # Interruption immédiate via bouton ANNULER
         if not st.session_state.simulation_running:
             break
 
@@ -169,37 +169,63 @@ if st.session_state.simulation_running:
         val_pred = row.get('faults_pred', 0)
         val_sample = row.get('sample', index)
 
+        # --- CONVERSION DU TEMPS ---
+        # On convertit le numéro d'échantillon en HEURES
+        # Exemple : sample 100 * 3 min = 300 min = 5.0 Heures
+        current_time_hours = (val_sample * TIME_STEP_MINUTES) / 60
+
         # Ajout aux historiques
         history_pression.append(val_press)
         history_temp.append(val_temp)
         history_debit.append(val_debit)
         history_pred.append(val_pred)
-        history_sample.append(val_sample)
+        history_time.append(current_time_hours)
 
-        # 1. Mise à jour Pression
-        fig1 = go.Figure(go.Scatter(x=history_sample, y=history_pression, mode='lines', line=dict(color='cyan')))
-        fig1.update_layout(height=200, margin=dict(t=30,b=10,l=10,r=10), title="Pression (xmeas_7)", template="plotly_dark")
+        # --- VISUALISATION ---
+        # Notez l'usage de 'x=history_time' au lieu de sample
+
+        # 1. Pression
+        fig1 = go.Figure(go.Scatter(x=history_time, y=history_pression, mode='lines', line=dict(color='cyan')))
+        fig1.update_layout(
+            height=200, margin=dict(t=30,b=10,l=10,r=10),
+            title="Pression (xmeas_7)",
+            xaxis_title="Temps (h)",
+            template="plotly_dark"
+        )
         chart_feat1.plotly_chart(fig1, use_container_width=True, key=f"f1_{index}")
 
-        # 2. Mise à jour Température
-        fig2 = go.Figure(go.Scatter(x=history_sample, y=history_temp, mode='lines', line=dict(color='orange')))
-        fig2.update_layout(height=200, margin=dict(t=30,b=10,l=10,r=10), title="Température (xmeas_9)", template="plotly_dark")
+        # 2. Température
+        fig2 = go.Figure(go.Scatter(x=history_time, y=history_temp, mode='lines', line=dict(color='orange')))
+        fig2.update_layout(
+            height=200, margin=dict(t=30,b=10,l=10,r=10),
+            title="Température (xmeas_9)",
+            xaxis_title="Temps (h)",
+            template="plotly_dark"
+        )
         chart_feat2.plotly_chart(fig2, use_container_width=True, key=f"f2_{index}")
 
-        # 3. Mise à jour Débit
-        fig3 = go.Figure(go.Scatter(x=history_sample, y=history_debit, mode='lines', line=dict(color='#00FF00')))
-        fig3.update_layout(height=200, margin=dict(t=30,b=10,l=10,r=10), title="Débit (xmeas_10)", template="plotly_dark")
+        # 3. Débit
+        fig3 = go.Figure(go.Scatter(x=history_time, y=history_debit, mode='lines', line=dict(color='#00FF00')))
+        fig3.update_layout(
+            height=200, margin=dict(t=30,b=10,l=10,r=10),
+            title="Débit (xmeas_10)",
+            xaxis_title="Temps (h)",
+            template="plotly_dark"
+        )
         chart_feat3.plotly_chart(fig3, use_container_width=True, key=f"f3_{index}")
 
-        # 4. Mise à jour Vue Globale
-        fig_main = px.line(x=history_sample, y=history_pred, title="Vue Globale Prédiction")
-        fig_main.update_layout(height=250, margin=dict(t=30,b=20,l=20,r=20), paper_bgcolor="rgba(0,0,0,0)")
+        # 4. Vue Globale
+        fig_main = px.line(x=history_time, y=history_pred, title="Probabilité de panne")
+        fig_main.update_layout(
+            height=250, margin=dict(t=30,b=20,l=20,r=20),
+            paper_bgcolor="rgba(0,0,0,0)",
+            xaxis_title="Temps écoulé (heures)"
+        )
         chart_main_spot.plotly_chart(fig_main, use_container_width=True, key=f"main_{index}")
 
         # Vitesse d'animation
         time.sleep(0.05)
 
-    # Message de fin
     if st.session_state.simulation_running:
-        st.success("Fin de la simulation.")
+        st.success(f"Simulation terminée. Durée totale simulée : {current_time_hours:.1f} heures.")
         st.session_state.simulation_running = False
