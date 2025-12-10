@@ -2,7 +2,6 @@ import streamlit as st
 import pandas as pd
 import time
 import plotly.graph_objects as go
-import plotly.express as px
 import requests
 import os
 
@@ -21,11 +20,10 @@ def get_api_url():
 API_URL = get_api_url()
 
 # --- 3. PARAMÈTRE DE TEMPS ---
-# Combien de minutes s'écoulent entre deux lignes du CSV ?
-# Pour le Tennessee Eastman, c'est souvent 3 minutes.
+# 1 sample = 3 minutes
 TIME_STEP_MINUTES = 3
 
-# --- 4. CSS (NETTOYÉ) ---
+# --- 4. CSS ---
 st.markdown("""
     <style>
     .main { background-color: #0E1117; }
@@ -53,14 +51,11 @@ col_left, col_right = st.columns([1, 4])
 with col_left:
     st.subheader("Contrôle")
 
-    # Génération automatique des 20 scénarios
     scenario_options = {f"Panne #{i}": i for i in range(1, 21)}
 
-    # Initialisation de l'état
     if 'simulation_running' not in st.session_state:
         st.session_state.simulation_running = False
 
-    # Menu déroulant
     selected_scenario_name = st.selectbox(
         "Sélectionnez le scénario",
         list(scenario_options.keys()),
@@ -68,7 +63,6 @@ with col_left:
     )
     selected_fault_code = scenario_options[selected_scenario_name]
 
-    # --- BOUTONS DE CONTROLE ---
     col_btn1, col_btn2 = st.columns(2)
 
     with col_btn1:
@@ -79,7 +73,6 @@ with col_left:
         if st.button("⏹️ ANNULER", type="primary", use_container_width=True):
             st.session_state.simulation_running = False
 
-    # Boîte d'info Statut
     status_text = "En cours" if st.session_state.simulation_running else "Prêt"
     prediction_box = st.empty()
     prediction_box.markdown(f"""
@@ -94,11 +87,11 @@ with col_left:
 
 # === ZONE DROITE (VISUALISATION) ===
 with col_right:
-    st.markdown("##### 📈 Prédiction des pannes")
+    st.markdown("##### 📈 Diagnostic Panne (Vue Globale)")
     chart_main_spot = st.empty()
     st.divider()
 
-    st.markdown("##### 📊 Capteurs du réacteur")
+    st.markdown("##### 📊 Capteurs du réacteur (Temps réel)")
     feat_c1, feat_c2, feat_c3 = st.columns(3)
     chart_feat1 = feat_c1.empty()
     chart_feat2 = feat_c2.empty()
@@ -111,7 +104,7 @@ with col_right:
 
 if st.session_state.simulation_running:
 
-    # A. APPEL API AVEC CACHE
+    # A. APPEL API
     @st.cache_data(ttl=600)
     def fetch_data_from_api(url):
         try:
@@ -126,13 +119,12 @@ if st.session_state.simulation_running:
     with st.spinner("Chargement des données API..."):
         df_full = fetch_data_from_api(API_URL)
 
-    # Gestion erreur API
     if df_full.empty:
         st.error("Impossible de récupérer les données depuis l'API.")
         st.session_state.simulation_running = False
         st.stop()
 
-    # B. FILTRAGE DES DONNÉES
+    # B. FILTRAGE
     if 'faultNumber' in df_full.columns:
         df_full['faultNumber'] = df_full['faultNumber'].astype(int)
         simulation_data = df_full[df_full['faultNumber'] == selected_fault_code].reset_index(drop=True)
@@ -152,8 +144,6 @@ if st.session_state.simulation_running:
     history_temp = []
     history_debit = []
     history_pred = []
-
-    # On remplace history_sample par history_time
     history_time = []
 
     # D. BOUCLE D'ANIMATION
@@ -162,19 +152,23 @@ if st.session_state.simulation_running:
         if not st.session_state.simulation_running:
             break
 
-        # Lecture des valeurs
         val_press = row.get('xmeas_7', 0)
         val_temp = row.get('xmeas_9', 0)
         val_debit = row.get('xmeas_10', 0)
-        val_pred = row.get('faults_pred', 0)
         val_sample = row.get('sample', index)
 
-        # --- CONVERSION DU TEMPS ---
-        # On convertit le numéro d'échantillon en HEURES
-        # Exemple : sample 100 * 3 min = 300 min = 5.0 Heures
+        # 1. Temps (Heures)
         current_time_hours = (val_sample * TIME_STEP_MINUTES) / 60
 
-        # Ajout aux historiques
+        # 2. Masquage avant 1h (Warm-up)
+        raw_pred = row.get('faults_pred', 0)
+
+        if current_time_hours < 1.0:
+            val_pred = 0.0 # On force à 0 pendant la chauffe
+        else:
+            val_pred = raw_pred
+
+        # Ajout historiques
         history_pression.append(val_press)
         history_temp.append(val_temp)
         history_debit.append(val_debit)
@@ -182,15 +176,12 @@ if st.session_state.simulation_running:
         history_time.append(current_time_hours)
 
         # --- VISUALISATION ---
-        # Notez l'usage de 'x=history_time' au lieu de sample
 
         # 1. Pression
         fig1 = go.Figure(go.Scatter(x=history_time, y=history_pression, mode='lines', line=dict(color='cyan')))
         fig1.update_layout(
             height=200, margin=dict(t=30,b=10,l=10,r=10),
-            title="Pression (xmeas_7)",
-            xaxis_title="Temps (h)",
-            template="plotly_dark"
+            title="Pression (xmeas_7)", xaxis_title="Temps (h)", template="plotly_dark"
         )
         chart_feat1.plotly_chart(fig1, use_container_width=True, key=f"f1_{index}")
 
@@ -198,9 +189,7 @@ if st.session_state.simulation_running:
         fig2 = go.Figure(go.Scatter(x=history_time, y=history_temp, mode='lines', line=dict(color='orange')))
         fig2.update_layout(
             height=200, margin=dict(t=30,b=10,l=10,r=10),
-            title="Température (xmeas_9)",
-            xaxis_title="Temps (h)",
-            template="plotly_dark"
+            title="Température (xmeas_9)", xaxis_title="Temps (h)", template="plotly_dark"
         )
         chart_feat2.plotly_chart(fig2, use_container_width=True, key=f"f2_{index}")
 
@@ -208,24 +197,58 @@ if st.session_state.simulation_running:
         fig3 = go.Figure(go.Scatter(x=history_time, y=history_debit, mode='lines', line=dict(color='#00FF00')))
         fig3.update_layout(
             height=200, margin=dict(t=30,b=10,l=10,r=10),
-            title="Débit (xmeas_10)",
-            xaxis_title="Temps (h)",
-            template="plotly_dark"
+            title="Débit (xmeas_10)", xaxis_title="Temps (h)", template="plotly_dark"
         )
         chart_feat3.plotly_chart(fig3, use_container_width=True, key=f"f3_{index}")
 
-        # 4. Vue Globale
-        fig_main = px.line(x=history_time, y=history_pred, title="Probabilité de panne")
-        fig_main.update_layout(
-            height=250, margin=dict(t=30,b=20,l=20,r=20),
-            paper_bgcolor="rgba(0,0,0,0)",
-            xaxis_title="Temps écoulé (heures)"
+        # 4. Vue Globale (MODE DYNAMIQUE + AXE VISIBLE)
+        fig_main = go.Figure()
+
+        # Trace
+        fig_main.add_trace(go.Scatter(
+            x=history_time,
+            y=history_pred,
+            mode='lines',
+            name='Diagnostic',
+            line=dict(color='#FF4B4B', width=2)
+        ))
+
+        # Zone Grise (Couvre toute la hauteur automatiquement)
+        fig_main.add_vrect(
+            x0=0, x1=1,
+            fillcolor="gray", opacity=0.3,
+            line_width=0,
+            annotation_text="STABILISATION",
+            annotation_position="top left",
+            annotation_font_color="white"
         )
+
+        fig_main.update_layout(
+            title="Évolution du Diagnostic (Type de Panne)",
+            height=250,
+            margin=dict(t=30,b=20,l=20,r=20),
+            paper_bgcolor="rgba(0,0,0,0)",
+            template="plotly_dark",
+
+            # AXE X
+            xaxis=dict(
+                title="Temps écoulé (heures)",
+                range=[0, max(1.1, current_time_hours + 0.1)]
+            ),
+
+            # AXE Y : Réactivé (Visible) et Dynamique
+            yaxis=dict(
+                title="Code Panne", # L'unité est ici
+                visible=True,       # On réaffiche l'axe
+                automargin=True     # S'assure que le titre ne soit pas coupé
+                # Pas de 'range' fixe -> s'adapte aux données
+            )
+        )
+
         chart_main_spot.plotly_chart(fig_main, use_container_width=True, key=f"main_{index}")
 
-        # Vitesse d'animation
         time.sleep(0.05)
 
     if st.session_state.simulation_running:
-        st.success(f"Simulation terminée. Durée totale simulée : {current_time_hours:.1f} heures.")
+        st.success(f"Simulation terminée. Durée totale : {current_time_hours:.1f} heures.")
         st.session_state.simulation_running = False
