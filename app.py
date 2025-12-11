@@ -24,35 +24,24 @@ TIME_STEP_MINUTES = 3
 INJECTION_TIME_MIN = 60
 PERSISTENCE_LIMIT = 2
 
-# --- 4. METADONNÉES DES PERFORMANCES (C'est ici que tu montres ton expertise) ---
-# Remplis ce dictionnaire avec tes vrais résultats de test (classification report)
-# Pour la démo, j'ai mis des valeurs réalistes pour le Tennessee Eastman.
+# Métadonnées (inchangé)
 FAULT_METADATA = {
-    1: {"desc": "Modification Ratio A/C", "f1": 0.99, "accuracy": 0.99, "difficulty": "Facile", "comment": "Détection immédiate et précise."},
-    2: {"desc": "Composition B", "f1": 0.98, "accuracy": 0.98, "difficulty": "Facile", "comment": "Signature très claire sur la pression."},
-    3: {"desc": "Température D (Step)", "f1": 0.55, "accuracy": 0.60, "difficulty": "Difficile", "comment": "Panne très subtile, confusion fréquente avec panne 9."},
+    1: {"desc": "Modification Ratio A/C", "f1": 0.99, "accuracy": 0.99, "difficulty": "Facile", "comment": "Détection immédiate."},
+    2: {"desc": "Composition B", "f1": 0.98, "accuracy": 0.98, "difficulty": "Facile", "comment": "Signature claire."},
+    3: {"desc": "Température D (Step)", "f1": 0.55, "accuracy": 0.60, "difficulty": "Difficile", "comment": "Confusion fréquente."},
     4: {"desc": "Température Réacteur", "f1": 0.95, "accuracy": 0.96, "difficulty": "Facile", "comment": "Impact thermique fort."},
-    5: {"desc": "Température Entrée C", "f1": 0.40, "accuracy": 0.45, "difficulty": "Très Difficile", "comment": "Peu d'impact sur les variables surveillées."},
-    6: {"desc": "Perte Alimentation A", "f1": 0.99, "accuracy": 1.00, "difficulty": "Facile", "comment": "Arrêt total de l'alimentation, impossible à manquer."},
-    7: {"desc": "Pression Collecteur", "f1": 0.97, "accuracy": 0.98, "difficulty": "Moyen", "comment": "Bonne détection après délai."},
-    # ... Tu peux compléter ou laisser par défaut pour les autres
+    5: {"desc": "Température Entrée C", "f1": 0.40, "accuracy": 0.45, "difficulty": "Très Difficile", "comment": "Peu d'impact visible."},
+    6: {"desc": "Perte Alimentation A", "f1": 0.99, "accuracy": 1.00, "difficulty": "Facile", "comment": "Arrêt total."},
+    7: {"desc": "Pression Collecteur", "f1": 0.97, "accuracy": 0.98, "difficulty": "Moyen", "comment": "Bonne détection."},
 }
 
-# Fonction pour récupérer les infos (avec valeurs par défaut si pas dans la liste)
 def get_fault_info(code):
-    return FAULT_METADATA.get(code, {
-        "desc": "Scénario Standard",
-        "f1": 0.85,
-        "accuracy": 0.88,
-        "difficulty": "Moyen",
-        "comment": "Performance standard attendue."
-    })
+    return FAULT_METADATA.get(code, {"desc": "Scénario Standard", "f1": 0.85, "accuracy": 0.88, "difficulty": "Moyen", "comment": "Performance standard."})
 
-# --- 5. CSS ---
+# --- 4. CSS ---
 st.markdown("""
     <style>
     .main { background-color: #0E1117; }
-
     .result-box {
         background-color: #262730;
         border: 1px solid #4B4B4B;
@@ -64,29 +53,89 @@ st.markdown("""
     }
     .result-title { font-size: 0.8em; color: #aaaaaa; margin-bottom: 2px; text-transform: uppercase; letter-spacing: 1px;}
     .result-value { font-size: 1.4em; font-weight: bold; color: #FAFAFA; margin-bottom: 12px; }
-
     div[data-testid="stMetricValue"] { font-size: 26px; color: #FAFAFA; }
-
-    /* Style pour la "Carte d'identité" du modèle */
-    .model-card {
-        background-color: #1E2129;
-        padding: 15px;
-        border-radius: 8px;
-        border-left: 5px solid #00CC96;
-        margin-bottom: 20px;
-    }
-    .model-card-title { font-size: 1.1em; font-weight: bold; color: white; margin-bottom: 5px;}
-    .model-card-desc { font-size: 0.9em; color: #ccc; margin-bottom: 10px;}
-    .badge-easy { background-color: #28a745; color: white; padding: 2px 8px; border-radius: 4px; font-size: 0.8em;}
-    .badge-hard { background-color: #dc3545; color: white; padding: 2px 8px; border-radius: 4px; font-size: 0.8em;}
-    .badge-medium { background-color: #ffc107; color: black; padding: 2px 8px; border-radius: 4px; font-size: 0.8em;}
     </style>
 """, unsafe_allow_html=True)
+
+# --- 5. FONCTION DE DESSIN DU RÉACTEUR (NOUVEAU) ---
+def create_reactor_synoptic(current_p, current_t, current_f, base_p, base_t, base_f):
+    """
+    Crée un schéma Plotly du réacteur avec 3 LEDs qui changent de couleur
+    si la valeur dévie de plus de 2% de la valeur de base.
+    """
+
+    # Seuil de tolérance (ex: 2% de déviation = anomalie capteur)
+    THRESHOLD = 0.02
+
+    # Logique couleur (Vert = OK, Rouge = Alerte)
+    def get_color(curr, base):
+        if base == 0: return "#00CC96"
+        dev = abs(curr - base) / base
+        return "#FF4B4B" if dev > THRESHOLD else "#00CC96"
+
+    # Calcul des couleurs pour chaque capteur
+    # Si base est None (début simulation), on reste vert
+    c_p = get_color(current_p, base_p) if base_p else "#00CC96"
+    c_t = get_color(current_t, base_t) if base_t else "#00CC96"
+    c_f = get_color(current_f, base_f) if base_f else "#00CC96"
+
+    fig = go.Figure()
+
+    # 1. Le Réacteur (Rectangle arrondi)
+    fig.add_shape(type="rect", x0=3, y0=2, x1=7, y1=8, line=dict(color="white", width=2), fillcolor="rgba(255,255,255,0.1)")
+
+    # 2. Les Tuyaux (Lignes)
+    fig.add_shape(type="line", x0=1, y0=7, x1=3, y1=7, line=dict(color="white", width=2), name="Inlet") # Entrée
+    fig.add_annotation(x=1, y=7, text="Alimentation", showarrow=False, yshift=10, font=dict(color="#aaa", size=10))
+
+    fig.add_shape(type="line", x0=7, y0=3, x1=9, y1=3, line=dict(color="white", width=2), name="Outlet") # Sortie
+    fig.add_annotation(x=9, y=3, text="Produit", showarrow=False, yshift=10, font=dict(color="#aaa", size=10))
+
+    # 3. Les LEDs (Scatter points)
+    # Positions: Pression (Haut), Temp (Milieu), Débit (Sortie)
+
+    # LED Pression
+    fig.add_trace(go.Scatter(
+        x=[5], y=[8], mode='markers+text',
+        marker=dict(size=25, color=c_p, line=dict(width=2, color='white')),
+        text=["<b>P</b>"], textposition="middle center", textfont=dict(color='white'),
+        hoverinfo='text', hovertext=f"Pression: {current_p:.1f}"
+    ))
+    # LED Température
+    fig.add_trace(go.Scatter(
+        x=[5], y=[5], mode='markers+text',
+        marker=dict(size=25, color=c_t, line=dict(width=2, color='white')),
+        text=["<b>T</b>"], textposition="middle center", textfont=dict(color='white'),
+        hoverinfo='text', hovertext=f"Température: {current_t:.1f}"
+    ))
+    # LED Débit
+    fig.add_trace(go.Scatter(
+        x=[8], y=[3], mode='markers+text',
+        marker=dict(size=25, color=c_f, line=dict(width=2, color='white')),
+        text=["<b>D</b>"], textposition="middle center", textfont=dict(color='white'),
+        hoverinfo='text', hovertext=f"Débit: {current_f:.1f}"
+    ))
+
+    # Mise en page propre (sans axes)
+    fig.update_layout(
+        title="Schéma Synoptique (Temps Réel)",
+        title_font_size=14,
+        width=300, height=250,
+        margin=dict(l=10, r=10, t=40, b=10),
+        plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)",
+        xaxis=dict(range=[0, 10], showgrid=False, zeroline=False, visible=False),
+        yaxis=dict(range=[0, 10], showgrid=False, zeroline=False, visible=False),
+        showlegend=False
+    )
+    return fig
 
 # --- 6. INITIALISATION STATE ---
 if 'simulation_running' not in st.session_state: st.session_state.simulation_running = False
 if 'final_report' not in st.session_state: st.session_state.final_report = None
 if 'final_figs' not in st.session_state: st.session_state.final_figs = None
+
+# Valeurs de base (Moyennes) pour comparer
+if 'base_values' not in st.session_state: st.session_state.base_values = {'p': None, 't': None, 'f': None}
 
 # --- 7. MISE EN PAGE ---
 st.title("🏭 Monitor the Reactor")
@@ -100,7 +149,6 @@ with col_left:
     selected_scenario_name = st.selectbox("Sélectionnez le scénario", list(scenario_options.keys()), disabled=st.session_state.simulation_running)
     selected_fault_code = scenario_options[selected_scenario_name]
 
-    # Récupération des métadonnées pour ce scénario
     meta = get_fault_info(selected_fault_code)
 
     col_btn1, col_btn2 = st.columns(2)
@@ -109,6 +157,7 @@ with col_left:
             st.session_state.simulation_running = True
             st.session_state.final_report = None
             st.session_state.final_figs = None
+            st.session_state.base_values = {'p': None, 't': None, 'f': None} # Reset bases
             st.session_state.anomaly_detected = False
             st.session_state.anomaly_time_min = None
             st.session_state.diagnosis_confirmed = False
@@ -124,40 +173,30 @@ with col_left:
     status_txt = "En cours..." if st.session_state.simulation_running else "Prêt"
     st.markdown(f"""<div class="result-box"><div class="result-title">Statut</div><div class="result-value">{status_txt}</div></div>""", unsafe_allow_html=True)
 
-    # AJOUT : Affichage compact de la difficulté à gauche aussi
     diff_color = "#28a745" if meta['difficulty'] == "Facile" else "#dc3545" if "Difficile" in meta['difficulty'] else "#ffc107"
-    st.markdown(f"""
-    <div style="margin-top:10px; text-align:center;">
-        <span style="background-color:{diff_color}; color:white; padding:4px 10px; border-radius:15px; font-size:0.8em;">
-            Complexité : {meta['difficulty']}
-        </span>
-    </div>
-    """, unsafe_allow_html=True)
+    st.markdown(f"""<div style="margin-top:10px; text-align:center;"><span style="background-color:{diff_color}; color:white; padding:4px 10px; border-radius:15px; font-size:0.8em;">Complexité : {meta['difficulty']}</span></div>""", unsafe_allow_html=True)
+
+    st.divider()
+
+    # --- ZONE SYNOPTIQUE (VISUALISATION LIVE) ---
+    st.markdown("##### ⚙️ État Réacteur")
+    synoptic_spot = st.empty() # Placeholder pour le schéma
 
 
 # === ZONE DROITE (VISUALISATION) ===
 with col_right:
-
-    # --- NOUVEAU : CARTE D'IDENTITÉ DU SCÉNARIO ---
-    # On affiche ça tout le temps, pour prévenir des performances avant le lancement
+    # Métadonnées
     meta = get_fault_info(selected_fault_code)
-
-    # On utilise st.expander pour que ça ne prenne pas trop de place si on veut le cacher,
-    # ou st.container pour l'afficher en dur. Ici en dur c'est mieux pour la démo.
     with st.container():
-        st.markdown("##### 📋 Profil de performance du Modèle (Données Test Offline)")
-
+        st.markdown("##### 📋 Profil de performance (Offline)")
         kpi1, kpi2, kpi3, kpi4 = st.columns(4)
         kpi1.metric("Description", meta['desc'])
-        kpi2.metric("F1-Score (Test)", f"{meta['f1']:.2f}", help="Moyenne harmonique Précision/Rappel sur le jeu de test.")
-        kpi3.metric("Précision Globale", f"{meta['accuracy']:.2f}", help="Taux de bonnes prédictions global.")
-
-        # Petit hack pour afficher le commentaire en style 'info'
-        kpi4.info(f"**Note:** {meta['comment']}")
+        kpi2.metric("F1-Score", f"{meta['f1']:.2f}")
+        kpi3.metric("Précision", f"{meta['accuracy']:.2f}")
+        kpi4.info(f"{meta['comment']}")
 
     st.divider()
 
-    # 1. Zone Graphiques
     st.markdown("##### 📈 Diagnostic Panne (Vue Globale)")
     chart_main_spot = st.empty()
     st.markdown("##### 📊 Capteurs du réacteur (Temps réel)")
@@ -166,30 +205,29 @@ with col_right:
     chart_feat2 = feat_c2.empty()
     chart_feat3 = feat_c3.empty()
 
-    # LOGIQUE D'AFFICHAGE DES GRAPHES STOCKÉS
+    # Affichage statique fin de simulation
     if not st.session_state.simulation_running and st.session_state.final_figs:
         chart_main_spot.plotly_chart(st.session_state.final_figs['main'], use_container_width=True)
         chart_feat1.plotly_chart(st.session_state.final_figs['f1'], use_container_width=True)
         chart_feat2.plotly_chart(st.session_state.final_figs['f2'], use_container_width=True)
         chart_feat3.plotly_chart(st.session_state.final_figs['f3'], use_container_width=True)
 
-    # 2. Zone Rapport Final
+        # On réaffiche aussi le synoptique figé
+        synoptic_spot.plotly_chart(st.session_state.final_figs['synoptic'], use_container_width=True)
+
+    # Rapport Final
     if st.session_state.final_report:
         st.divider()
         st.markdown("### 📝 Rapport de Simulation")
         rep = st.session_state.final_report
         m1, m2, m3 = st.columns(3)
-        m1.metric("Scénario Joué", rep['scenario'])
-        det_val = f"{rep['detection_delay']:.1f} min" if rep['detection_delay'] is not None else "Non Détecté"
-        m2.metric("⏱️ Délai Détection", det_val, help="Temps après injection (1h). Marqueur Orange.")
-        diag_val = f"{rep['diagnosis_delay']:.1f} min" if rep['diagnosis_delay'] is not None else "Non Identifié"
-        m3.metric("🎯 Délai Diagnostic", diag_val, help="Temps après injection (1h). Marqueur Rouge.")
-        if rep['diagnosis_delay'] is not None: st.success("✅ Succès : Panne identifiée et localisée.")
-        else: st.warning("⚠️ Échec : Identification incomplète dans le temps imparti.")
+        m1.metric("Scénario", rep['scenario'])
+        m2.metric("⏱️ Détection", f"{rep['detection_delay']:.1f} min" if rep['detection_delay'] else "N/A")
+        m3.metric("🎯 Diagnostic", f"{rep['diagnosis_delay']:.1f} min" if rep['diagnosis_delay'] else "N/A")
 
 
 # ==========================
-# 7. LOGIQUE D'EXÉCUTION
+# 8. LOGIQUE D'EXÉCUTION
 # ==========================
 if st.session_state.simulation_running:
 
@@ -200,7 +238,7 @@ if st.session_state.simulation_running:
             return pd.DataFrame(response.json()) if response.status_code == 200 else pd.DataFrame()
         except Exception: return pd.DataFrame()
 
-    with st.spinner("Chargement des données..."): df_full = fetch_data_from_api(API_URL)
+    with st.spinner("Chargement..."): df_full = fetch_data_from_api(API_URL)
     if df_full.empty: st.error("Erreur API."); st.session_state.simulation_running = False; st.stop()
     if 'faultNumber' in df_full.columns:
         df_full['faultNumber'] = df_full['faultNumber'].astype(int)
@@ -209,6 +247,9 @@ if st.session_state.simulation_running:
     if simulation_data.empty: st.error("Aucune donnée."); st.session_state.simulation_running = False; st.stop()
 
     history_pression, history_temp, history_debit, history_pred, history_time = [], [], [], [], []
+
+    # Pour calculer la moyenne des 10 premiers points (calibration des capteurs)
+    init_p, init_t, init_f = [], [], []
 
     for index, row in simulation_data.iterrows():
         if not st.session_state.simulation_running: break
@@ -221,6 +262,18 @@ if st.session_state.simulation_running:
         current_time_minutes = val_sample * TIME_STEP_MINUTES
         display_pred = 0.0 if current_time_hours < 1.0 else val_diagnosis
 
+        # --- CALIBRATION DU RÉACTEUR (5 premiers points) ---
+        # On détermine les valeurs "Normales" au tout début
+        if index < 5:
+            init_p.append(val_press)
+            init_t.append(val_temp)
+            init_f.append(val_debit)
+        elif index == 5:
+            st.session_state.base_values['p'] = sum(init_p)/len(init_p)
+            st.session_state.base_values['t'] = sum(init_t)/len(init_t)
+            st.session_state.base_values['f'] = sum(init_f)/len(init_f)
+
+        # --- LOGIQUE HYBRIDE ---
         if current_time_minutes > INJECTION_TIME_MIN:
             if not st.session_state.anomaly_detected and val_detector > 0.5:
                 st.session_state.anomaly_detected = True
@@ -235,6 +288,7 @@ if st.session_state.simulation_running:
         history_pression.append(val_press); history_temp.append(val_temp); history_debit.append(val_debit)
         history_pred.append(display_pred); history_time.append(current_time_hours)
 
+        # --- UPDATE GRAPHS ---
         fig1 = go.Figure(go.Scatter(x=history_time, y=history_pression, mode='lines', line=dict(color='cyan')))
         fig1.update_layout(height=180, margin=dict(t=30,b=10,l=10,r=10), title="Pression", xaxis_title="Heures", template="plotly_dark")
         chart_feat1.plotly_chart(fig1, use_container_width=True, key=f"f1_{index}")
@@ -250,8 +304,22 @@ if st.session_state.simulation_running:
         fig_main = go.Figure()
         fig_main.add_trace(go.Scatter(x=history_time, y=history_pred, mode='lines', name='Diag', line=dict(color='#FF4B4B', width=2)))
         fig_main.add_vrect(x0=0, x1=1, fillcolor="gray", opacity=0.3, line_width=0, annotation_text="STABILISATION", annotation_position="top left", annotation_font_color="white")
-        fig_main.update_layout(title="Type de Panne Identifiée", height=250, margin=dict(t=30,b=20,l=20,r=20), paper_bgcolor="rgba(0,0,0,0)", template="plotly_dark", xaxis=dict(title="Heures", range=[0, max(1.1, current_time_hours + 0.1)]), yaxis=dict(title="Code Panne", visible=True, automargin=True))
+        fig_main.update_layout(title="Type de Panne", height=250, margin=dict(t=30,b=20,l=20,r=20), paper_bgcolor="rgba(0,0,0,0)", template="plotly_dark", xaxis=dict(title="Heures", range=[0, max(1.1, current_time_hours + 0.1)]), yaxis=dict(title="Code Panne", visible=True, automargin=True))
         chart_main_spot.plotly_chart(fig_main, use_container_width=True, key=f"main_{index}")
+
+        # --- UPDATE SYNOPTIQUE (NOUVEAU) ---
+        # On passe les valeurs actuelles et les valeurs de base
+        # Note : On force l'affichage Vert pendant la première heure (current_time_hours < 1.0)
+        # pour éviter que ça clignote pendant la chauffe.
+        if current_time_hours < 1.0:
+            fig_syn = create_reactor_synoptic(val_press, val_temp, val_debit, None, None, None)
+        else:
+            fig_syn = create_reactor_synoptic(val_press, val_temp, val_debit,
+                                              st.session_state.base_values['p'],
+                                              st.session_state.base_values['t'],
+                                              st.session_state.base_values['f'])
+
+        synoptic_spot.plotly_chart(fig_syn, use_container_width=True, key=f"syn_{index}")
 
         time.sleep(0.05)
 
@@ -273,6 +341,6 @@ if st.session_state.simulation_running:
                 fig_to_mark.add_vline(x=diag_time_h, line_width=2, line_dash="solid", line_color="red", annotation_text="Diagnostic", annotation_position=pos)
             return fig_to_mark
 
-        st.session_state.final_figs = {'main': add_markers_to_fig(fig_main), 'f1': fig1, 'f2': fig2, 'f3': fig3}
+        st.session_state.final_figs = {'main': add_markers_to_fig(fig_main), 'f1': fig1, 'f2': fig2, 'f3': fig3, 'synoptic': fig_syn}
         st.session_state.simulation_running = False
         st.rerun()
